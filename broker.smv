@@ -1,0 +1,233 @@
+MODULE main
+
+    VAR
+        broker : broker(b0, b1, b2, b3, b4);
+        b0 : blockchain(broker, 0);
+        b1 : blockchain(broker, 1);
+        b2 : blockchain(broker, 2);
+        b3 : blockchain(broker, 3);
+        b4 : blockchain(broker, 4);
+
+
+
+MODULE broker(b0, b1, b2, b3, b4)
+
+    VAR
+        connector : brokerConnector(b0, b1, b2, b3, b4);
+        --topics : topics;
+
+    
+
+MODULE brokerConnector(b0, b1, b2, b3, b4)
+
+    VAR
+        state : {idle, addingSubscriber, addingPublisher, updatingSubscribers, updatingPublishers};
+        target : {0, 1, 2, 3, 4, nil};
+        subscribers : array 0..4 of boolean;
+        publishers  : array 0..4 of boolean;
+        scheduler : 0..4;
+
+    ASSIGN
+        init(state) := idle;
+        init(target) := nil;
+
+        init(subscribers[0]) := FALSE;
+        init(subscribers[1]) := FALSE;
+        init(subscribers[2]) := FALSE;
+        init(subscribers[3]) := FALSE;
+        init(subscribers[4]) := FALSE;
+
+        init(publishers[0]) := FALSE;
+        init(publishers[1]) := FALSE;
+        init(publishers[2]) := FALSE;
+        init(publishers[3]) := FALSE;
+        init(publishers[4]) := FALSE;
+
+        init(scheduler) := {0..4};
+        next(scheduler) :=
+            case
+                (state = addingPublisher) | (state = addingSubscriber) : {0..4};
+                TRUE : scheduler;
+            esac;
+
+
+        next(state) :=
+            case
+                (state = idle) & (((b0.connector.connectorContract.state = contractSubscribe) | (b1.connector.connectorContract.state = contractSubscribe) | (b2.connector.connectorContract.state = contractSubscribe) | (b3.connector.connectorContract.state = contractSubscribe) | (b4.connector.connectorContract.state = contractSubscribe)) & ((b0.connector.connectorContract.state = contractPublish) | (b1.connector.connectorContract.state = contractPublish) | (b2.connector.connectorContract.state = contractPublish) | (b3.connector.connectorContract.state = contractPublish) | (b4.connector.connectorContract.state = contractPublish))) : {addingPublisher, addingSubscriber};
+                (state = idle) & ((b0.connector.connectorContract.state = contractSubscribe) | (b1.connector.connectorContract.state = contractSubscribe) | (b2.connector.connectorContract.state = contractSubscribe) | (b3.connector.connectorContract.state = contractSubscribe) | (b4.connector.connectorContract.state = contractSubscribe)) : addingSubscriber;
+                (state = idle) & ((b0.connector.connectorContract.state = contractPublish) | (b1.connector.connectorContract.state = contractPublish) | (b2.connector.connectorContract.state = contractPublish) | (b3.connector.connectorContract.state = contractPublish) | (b4.connector.connectorContract.state = contractPublish)) : addingPublisher;
+
+                (state = addingSubscriber) & (target != nil) : updatingSubscribers;
+                (state = addingPublisher) & (target != nil) : updatingPublishers;
+
+                (state = updatingSubscribers) & (target = 0) & (subscribers[0] = TRUE) : idle;
+                (state = updatingSubscribers) & (target = 1) & (subscribers[1] = TRUE) : idle;
+                (state = updatingSubscribers) & (target = 2) & (subscribers[2] = TRUE) : idle;
+                (state = updatingSubscribers) & (target = 3) & (subscribers[3] = TRUE) : idle;
+                (state = updatingSubscribers) & (target = 4) & (subscribers[4] = TRUE) : idle;
+
+                (state = updatingPublishers) & (target = 0) & (publishers[0] = TRUE) : idle;
+                (state = updatingPublishers) & (target = 1) & (publishers[1] = TRUE) : idle;
+                (state = updatingPublishers) & (target = 2) & (publishers[2] = TRUE) : idle;
+                (state = updatingPublishers) & (target = 3) & (publishers[3] = TRUE) : idle;
+                (state = updatingPublishers) & (target = 4) & (publishers[4] = TRUE) : idle;
+
+                TRUE : state;
+            esac;
+
+        next(target) :=
+            case
+                (state = addingSubscriber) & (target = nil) & (scheduler = 0) & (b0.connector.connectorContract.state = contractSubscribe) : b0.id;
+                (state = addingSubscriber) & (target = nil) & (scheduler = 1) & (b1.connector.connectorContract.state = contractSubscribe) : b1.id;
+                (state = addingSubscriber) & (target = nil) & (scheduler = 2) & (b2.connector.connectorContract.state = contractSubscribe) : b2.id;
+                (state = addingSubscriber) & (target = nil) & (scheduler = 3) & (b3.connector.connectorContract.state = contractSubscribe) : b3.id;
+                (state = addingSubscriber) & (target = nil) & (scheduler = 4) & (b4.connector.connectorContract.state = contractSubscribe) : b4.id;
+
+                (state = addingPublisher) & (target = nil) & (scheduler = 0) & (b0.connector.connectorContract.state = contractPublish) : b0.id;
+                (state = addingPublisher) & (target = nil) & (scheduler = 1) & (b1.connector.connectorContract.state = contractPublish) : b1.id;
+                (state = addingPublisher) & (target = nil) & (scheduler = 2) & (b2.connector.connectorContract.state = contractPublish) : b2.id;
+                (state = addingPublisher) & (target = nil) & (scheduler = 3) & (b3.connector.connectorContract.state = contractPublish) : b3.id;
+                (state = addingPublisher) & (target = nil) & (scheduler = 4) & (b4.connector.connectorContract.state = contractPublish) : b4.id;
+
+                (state = idle) : nil;
+
+                TRUE : target;
+            esac;
+
+        next(subscribers[0]) :=
+            case
+                (state = addingSubscriber) & (target = 0) : TRUE;
+                TRUE : subscribers[0];
+            esac;
+
+        next(subscribers[1]) :=
+            case
+                (state = addingSubscriber) & (target = 1) : TRUE;
+                TRUE : subscribers[1];
+            esac;
+
+        next(subscribers[2]) :=
+            case
+                (state = addingSubscriber) & (target = 2) : TRUE;
+                TRUE : subscribers[2];
+            esac;
+
+        next(subscribers[3]) :=
+            case
+                (state = addingSubscriber) & (target = 3) : TRUE;
+                TRUE : subscribers[3];
+            esac;
+
+        next(subscribers[4]) :=
+            case
+                (state = addingSubscriber) & (target = 4) : TRUE;
+                TRUE : subscribers[4];
+            esac;
+
+
+        next(publishers[0]) :=
+            case
+                (state = addingPublisher) & (target = 0) : TRUE;
+                TRUE : publishers[0];
+            esac;
+
+        next(publishers[1]) :=
+            case
+                (state = addingPublisher) & (target = 1) : TRUE;
+                TRUE : publishers[1];
+            esac;
+
+        next(publishers[2]) :=
+            case
+                (state = addingPublisher) & (target = 2) : TRUE;
+                TRUE : publishers[2];
+            esac;
+
+        next(publishers[3]) :=
+            case
+                (state = addingPublisher) & (target = 3) : TRUE;
+                TRUE : publishers[3];
+            esac;
+
+        next(publishers[4]) :=
+            case
+                (state = addingPublisher) & (target = 4) : TRUE;
+                TRUE : publishers[4];
+            esac;
+
+
+
+MODULE blockchain(broker, id)
+
+    VAR
+        application : application;
+        connector : blockchainConnector(broker, id);
+
+
+
+MODULE application
+
+    VAR
+        state : {idle, updating};
+        information : 0..9;
+
+    ASSIGN
+        init(state) := idle;
+        init(information) := {0..9};
+
+        next(state) :=
+            case
+                (state = idle) : {idle, updating};
+                (state = updating) : idle;
+                TRUE : state;
+            esac;
+
+        next(information) :=
+            case
+                (state = updating) : {0..9};
+                TRUE : information;
+            esac;
+        
+MODULE blockchainConnector(broker, id)
+
+    VAR
+        connectorContract : connectorContract(broker, id);
+        --connectorPublish : connectorPublish;
+        --connectorSubscribe : connectorSubscribe;
+
+MODULE connectorContract(broker, id)
+
+    VAR
+        state : {idle, contractSubscribe, contractPublish, topic};
+        isPublisher  : boolean;
+        isSubscriber : boolean;
+
+    ASSIGN
+        init(state) := idle;
+        init(isPublisher) := FALSE;
+        init(isSubscriber) := FALSE;
+
+        next(state) :=
+            case
+                (state = idle) & (isPublisher = FALSE) & (isSubscriber = FALSE) : {idle, contractSubscribe, contractPublish};
+                (state = idle) & (isPublisher = FALSE) & (isSubscriber = TRUE)  : {idle, contractPublish};
+                (state = idle) & (isPublisher = FALSE) & (isSubscriber = TRUE)  : {idle, contractSubscribe};
+                (state = contractSubscribe) & (broker.connector.subscribers[id] = TRUE) : idle;
+                (state = contractPublish) & (broker.connector.publishers[id] = TRUE) : idle;
+                TRUE : state;
+            esac;
+
+        next(isPublisher) :=
+            case
+                (broker.connector.state = addingPublisher) & (broker.connector.target = id) : TRUE;
+                TRUE : isPublisher;
+            esac;
+
+        next(isSubscriber) :=
+            case
+                (broker.connector.state = addingSubscriber) & (broker.connector.target = id) : TRUE;
+                TRUE : isSubscriber;
+            esac;
+
+    
+       
