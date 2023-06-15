@@ -10,8 +10,9 @@
 -- |            + --------- +  |      |    + --------- +    |      |  + --------- +            |
 -- + ------------------------- +      + ------------------- +      + ------------------------- +
 
+-- main module
 MODULE main
-
+    -- structure composed of 1 broker and 5 blockchains
     VAR
         broker : broker(b0, b1, b2, b3, b4);
         b0 : blockchain(broker, 0);
@@ -21,17 +22,22 @@ MODULE main
         b4 : blockchain(broker, 4);
 
 
-
+-- broker module
+-- takes a reference of all the other blockchains
 MODULE broker(b0, b1, b2, b3, b4)
-
+    -- composed of a connector and topics
     VAR
         connector : brokerConnector(b0, b1, b2, b3, b4);
-        --topics : topics;
+        t0 : topic(b0, b1, b2, b3, b4, connector, 0);
+        t1 : topic(b1, b0, b2, b3, b4, connector, 1);
+        t2 : topic(b2, b1, b0, b3, b4, connector, 2);
+        t3 : topic(b3, b1, b2, b0, b4, connector, 3);
+        t4 : topic(b4, b1, b2, b3, b0, connector, 4);
 
     
-
+-- connector module for the broker
 MODULE brokerConnector(b0, b1, b2, b3, b4)
-
+    -- composed by a state, target (broker), array of subscribers, array of publishers and a scheduler
     VAR
         state : {idle, addingSubscriber, addingPublisher, updatingSubscribers, updatingPublishers};
         target : {0, 1, 2, 3, 4, nil};
@@ -167,16 +173,91 @@ MODULE brokerConnector(b0, b1, b2, b3, b4)
                 TRUE : publishers[4];
             esac;
 
+-- topic module for the broker
+MODULE topic(p, s0, s1, s2, s3, connector, id)
+
+    VAR
+        state : {idle, creating, updating};
+        name : {0, 1, 2, 3, 4, nil};
+        message : {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, nil};
+        pub : {0, 1, 2, 3, 4, nil};
+        sub : array 0..4 of boolean;
+
+    ASSIGN
+        init(state) := idle;
+        init(name) := nil;
+        init(message) := nil;
+        init(pub) := nil;
+        init(sub[0]) := FALSE;
+        init(sub[1]) := FALSE;
+        init(sub[2]) := FALSE;
+        init(sub[3]) := FALSE;
+        init(sub[4]) := FALSE;
+
+        next(state) :=
+            case
+                (state = idle) & (p.connector.connectorPublish.state = publish) & (name = nil) & (pub = nil) & (message = nil) : creating;
+                (state = creating) & (name != nil) & (pub != nil) & (message != nil) : idle;
+
+                (state = idle) & (p.connector.connectorPublish.state = updating) : updating;
+                (state = updating) : idle; -- MESSAGE THE SUBSCRIBERS
+                TRUE : state;
+            esac;
+
+        next(name) :=
+            case
+                (state = creating) : p.id;
+                TRUE : name;
+            esac;
+
+        next(message) :=
+            case
+                (state = creating) | (state = updating) : p.application.information;
+                TRUE : message;
+            esac;
+
+        next(pub) :=
+            case
+                (state = creating) : p.id;
+                TRUE : pub;
+            esac;
+
+        next(sub[0]) :=
+            case
+                TRUE : sub[0];
+            esac;
+
+        next(sub[1]) :=
+            case
+                TRUE : sub[1];
+            esac;
+
+        next(sub[2]) :=
+            case
+                TRUE : sub[2];
+            esac;
+
+        next(sub[3]) :=
+            case
+                TRUE : sub[3];
+            esac;
+
+        next(sub[4]) :=
+            case
+                TRUE : sub[4];
+            esac;
 
 
+-- blockchain module
+-- contains application and connector
 MODULE blockchain(broker, id)
 
     VAR
         application : application;
-        connector : blockchainConnector(broker, id);
+        connector : blockchainConnector(broker, id, application);
 
 
-
+-- application module for blockchain
 MODULE application
 
     VAR
@@ -199,14 +280,16 @@ MODULE application
                 (state = updating) : {0..9};
                 TRUE : information;
             esac;
-        
-MODULE blockchainConnector(broker, id)
+
+-- connector module for blockchain  
+MODULE blockchainConnector(broker, id, app)
 
     VAR
         connectorContract : connectorContract(broker, id);
-        --connectorPublish : connectorPublish;
-        --connectorSubscribe : connectorSubscribe;
+        connectorPublish : connectorPublish(broker, id, app);
+        connectorSubscribe : connectorSubscribe(broker, id, app);
 
+-- contract module for blockchain connector
 MODULE connectorContract(broker, id)
 
     VAR
@@ -241,5 +324,106 @@ MODULE connectorContract(broker, id)
                 TRUE : isSubscriber;
             esac;
 
-    
-       
+-- publish module for blockchain connector
+MODULE connectorPublish(broker, id, app)
+
+    VAR
+        state : {idle, checkIfPublisher, checkIfCanPublish, publish, updating, updated};
+        published : boolean;
+
+    ASSIGN
+        init(state) := idle;
+        init(published) := FALSE;
+
+        next(state) :=
+            case
+                (state = idle) & (published = FALSE) : {idle, checkIfPublisher};
+                (state = checkIfPublisher) & (broker.connector.publishers[id] = TRUE) : checkIfCanPublish;
+                (state = checkIfPublisher) & (broker.connector.publishers[id] = FALSE) : idle;
+
+                (state = checkIfCanPublish) & (broker.t0.id = id) & (broker.t0.pub = nil) : publish;
+                (state = checkIfCanPublish) & (broker.t1.id = id) & (broker.t1.pub = nil) : publish;
+                (state = checkIfCanPublish) & (broker.t2.id = id) & (broker.t2.pub = nil) : publish;
+                (state = checkIfCanPublish) & (broker.t3.id = id) & (broker.t3.pub = nil) : publish;
+                (state = checkIfCanPublish) & (broker.t4.id = id) & (broker.t4.pub = nil) : publish;
+
+                (state = publish) & (broker.t0.id = id) & (broker.t0.pub = id) : idle;
+                (state = publish) & (broker.t1.id = id) & (broker.t1.pub = id) : idle;
+                (state = publish) & (broker.t2.id = id) & (broker.t2.pub = id) : idle;
+                (state = publish) & (broker.t3.id = id) & (broker.t3.pub = id) : idle;
+                (state = publish) & (broker.t4.id = id) & (broker.t4.pub = id) : idle;
+                
+
+                (state = idle) & (published = TRUE) & (app.state = updating) : updating;
+
+                (state = updating) & (broker.t0.id = id) & (broker.t0.message = app.information) : updated;
+                (state = updating) & (broker.t1.id = id) & (broker.t1.message = app.information) : updated;
+                (state = updating) & (broker.t2.id = id) & (broker.t2.message = app.information) : updated;
+                (state = updating) & (broker.t3.id = id) & (broker.t3.message = app.information) : updated;
+                (state = updating) & (broker.t4.id = id) & (broker.t4.message = app.information) : updated;
+
+                (state = updated) & (broker.t0.id = id) & (broker.t0.state = updating) : idle;
+                (state = updated) & (broker.t1.id = id) & (broker.t1.state = updating) : idle;
+                (state = updated) & (broker.t2.id = id) & (broker.t2.state = updating) : idle;
+                (state = updated) & (broker.t3.id = id) & (broker.t3.state = updating) : idle;
+                (state = updated) & (broker.t4.id = id) & (broker.t4.state = updating) : idle;
+
+                TRUE : state;
+            esac;
+
+        next(published) :=
+            case
+                (state = publish) : TRUE;
+                TRUE : published;
+            esac;
+
+
+MODULE connectorSubscribe(broker, id, app)
+
+    VAR
+        state : {idle, checkIfSubscriber, checkIfCanSubscribe, subTo0, subTo1, subTo2, subTo3, subTo4};
+        --subbedTopics : array 0..4 of {0, 1, 2, 3, 4, nil};
+        scheduler : 0..4;
+
+    ASSIGN
+        init(state) := idle;
+
+        init(scheduler) := {0..4};
+
+        next(scheduler) :=
+            case
+                TRUE : {0..4};
+            esac;
+        
+        -- checking the availability of the topics becomes too computationally intensive
+        next(state) :=
+            case
+                (state = idle) & (broker.connector.subscribers[id] = TRUE) : checkIfCanSubscribe;
+                (state = idle) & (broker.connector.subscribers[id] = FALSE) : idle;
+                
+                (state = checkIfCanSubscribe) & (scheduler = 0) & (scheduler != id) & (broker.t0.sub[id] = FALSE) : subTo0;
+                (state = checkIfCanSubscribe) & (scheduler = 1) & (scheduler != id) & (broker.t1.sub[id] = FALSE) : subTo1;
+                (state = checkIfCanSubscribe) & (scheduler = 2) & (scheduler != id) & (broker.t2.sub[id] = FALSE) : subTo2;
+                (state = checkIfCanSubscribe) & (scheduler = 3) & (scheduler != id) & (broker.t3.sub[id] = FALSE) : subTo3;
+                (state = checkIfCanSubscribe) & (scheduler = 4) & (scheduler != id) & (broker.t4.sub[id] = FALSE) : subTo4;
+
+                (state = checkIfCanSubscribe) & (scheduler = 0) & (scheduler != id) & (broker.t0.sub[id] = TRUE) : idle;
+                (state = checkIfCanSubscribe) & (scheduler = 1) & (scheduler != id) & (broker.t1.sub[id] = TRUE) : idle;
+                (state = checkIfCanSubscribe) & (scheduler = 2) & (scheduler != id) & (broker.t2.sub[id] = TRUE) : idle;
+                (state = checkIfCanSubscribe) & (scheduler = 3) & (scheduler != id) & (broker.t3.sub[id] = TRUE) : idle;
+                (state = checkIfCanSubscribe) & (scheduler = 4) & (scheduler != id) & (broker.t4.sub[id] = TRUE) : idle;
+
+                --(state = checkIfCanSubscribe) & (scheduler != id) & (broker.t0.id = scheduler) & (broker.t0.message != nil) & (broker.t0.sub[id] = FALSE) : subTo0;
+                --(state = checkIfCanSubscribe) & (scheduler != id) & (broker.t1.id = scheduler) & (broker.t1.message != nil) & (broker.t1.sub[id] = FALSE) : subTo1;
+                --(state = checkIfCanSubscribe) & (scheduler != id) & (broker.t2.id = scheduler) & (broker.t2.message != nil) & (broker.t2.sub[id] = FALSE) : subTo2;
+                --(state = checkIfCanSubscribe) & (scheduler != id) & (broker.t3.id = scheduler) & (broker.t3.message != nil) & (broker.t3.sub[id] = FALSE) : subTo3;
+                --(state = checkIfCanSubscribe) & (scheduler != id) & (broker.t4.id = scheduler) & (broker.t4.message != nil) & (broker.t4.sub[id] = FALSE) : subTo4;
+
+                (state = subTo0) & (broker.t0.sub[id] = TRUE) : idle;
+                --(state = subTo1) & (broker.t1.sub[id] = TRUE) : idle;
+                --(state = subTo2) & (broker.t2.sub[id] = TRUE) : idle;
+                --(state = subTo3) & (broker.t3.sub[id] = TRUE) : idle;
+                --(state = subTo4) & (broker.t4.sub[id] = TRUE) : idle;
+
+                TRUE : state;
+            esac;
