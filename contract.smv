@@ -1,0 +1,323 @@
+--          PUBLISHER                         BROKER                         SUBSCRIBER
+-- + ------------------------- +      + ------------------ +      + ------------------------- +
+-- |  + ----------- +          |      |    + ========== +  |      |          + ----------- +  |
+-- |  | application |          |   +--|-> || connector || <|--+   |          | application |  |
+-- |  + ----------- +          |   |  |   + ========== +   |  |   |          + ----------- +  |
+-- |                           |   |  |         |          |  |   |                           |
+-- |            + ========== + |   |  |   + --------- +    |  |   |   + ========== +          |
+-- |           || connector ||-|---+  |   |   topic   |    |  +---|- || connector ||          |
+-- |           + ========== +  |      |   + --------- +    |      |  + ========== +           |
+-- + ------------------------- +      + ------------------ +      + ------------------------- +
+-- *componenti di interesse indicate da doppie linee*
+--
+-- Architettura pub-sub per intercomunicazione tra blockchain tramite middleman (broker)
+--
+-- l'area di interesse di questa simulazione comprende la funzionalità di iscrizione da parte delle blockchain come subscriber e publisher
+-- moduli dell'architettura di interesse: connettore broker e connettore blockchain:
+--
+-- - il connettore del broker tiene traccia di tutte le blockchain iscritte e il loro metodo di iscrizione (publisher, subscriber)
+--
+-- - il connettore delle blockchain comunica con il broker per iscriversi come subscriber, publisher o entrambi
+
+
+-- modulo main
+MODULE main
+    -- simulazione impostata con 1 broker e 5 blockchain
+    VAR
+        -- connettore del broker, contiene un riferimento ad ogni blockchain della rete
+        brokerConnector : brokerConnector(b0, b1, b2, b3, b4);
+
+        -- connettori delle blockchain, contengono un riferimento al connettore del broker e un id di riferimento
+        b0 : blockchainConnector(brokerConnector, 0);
+        b1 : blockchainConnector(brokerConnector, 1);
+        b2 : blockchainConnector(brokerConnector, 2);
+        b3 : blockchainConnector(brokerConnector, 3);
+        b4 : blockchainConnector(brokerConnector, 4);
+
+
+    -- proprietà di interesse della simulazione:
+    CTLSPEC -- deadlock broker
+        -- non può mai, nel futuro, esistere una condizione in cui il connettore del broker rimane sempre su uno stato all'infuori di "idle"
+        AF(!EG(brokerConnector.state = addingSubscriber | brokerConnector.state = addingPublisher | brokerConnector.state = updatingSubscribers | brokerConnector.state = updatingPublishers));
+
+    CTLSPEC -- deadlock blockchain
+        -- non può mai, nel futuro, esistere una condizione in cui la blockchain rimane sempre su uno stato all'infuori di "idle"
+        AF(!EG(b0.state = contractSubscribe | b0.state = contractPublish));
+
+    CTLSPEC -- liveness subscribe
+        -- sempre accade che lo stato della blockchain "contractSubscribe" implica che eventualmente il broker registra la blockchain come subscriber
+        AG((b0.state = contractSubscribe) -> EF(brokerConnector.subscribers[0] = TRUE));
+
+    CTLSPEC -- liveness publish
+        -- sempre accade che lo stato della blockchain "contractPublish" implica che eventualmente il broker registra la blockchain come publisher
+        AG((b0.state = contractPublish) -> EF(brokerConnector.publishers[0] = TRUE));
+    
+    CTLSPEC -- assicura che le blockchain non tentano di iscriversi come subscriber quando sono già iscritte
+        -- sempre vale che non può esistere una condizione in cui la blockchain è in stato "contractSubscribe" ed è già iscritta
+        AG(!EF(b0.state = contractSubscribe & b0.isSubscriber = TRUE));
+
+    CTLSPEC -- assicura che le blockchain non tentano di iscriversi come publisher quando sono già iscritte
+        -- sempre vale che non può esistere una condizione in cui la blockchain è in stato "contractPublish" ed è già iscritta
+        AG(!EF(b0.state = contractPublish & b0.isPublisher = TRUE));
+
+    CTLSPEC -- verifica che quando il broker sta aggiungendo un subscriber, il valore corretto viene registrato al suo interno
+        -- sempre accade che il broker in stato "addingSubscriber" e il target del broker punta a 0 implicano che eventualmente la blockchain
+        -- indicata con 0 viene segnata come subscriber
+        AG((brokerConnector.state = addingSubscriber & brokerConnector.target = 0) -> EF(brokerConnector.subscribers[0] = TRUE));
+
+    CTLSPEC -- verifica che quando il broker sta aggiungendo un publisher, il valore corretto viene registrato al suo interno
+        -- sempre accade che il broker in stato "addingSubscriber" e il target del broker punta a 0 implicano che eventualmente la blockchain
+        -- indicata con 0 viene segnata come subscriber
+        AG((brokerConnector.state = addingPublisher & brokerConnector.target = 0) -> EF(brokerConnector.publishers[0] = TRUE));
+
+
+-- modulo per simulare il connettore del broker
+-- parametri: blockchain nella rete
+MODULE brokerConnector(b0, b1, b2, b3, b4)
+
+    VAR
+        -- stato per rappresentare la condizione del connettore e cià che sta svolgendo in ogni momento
+        -- idle: non sta lavorando
+        -- addingSubscriber: aggiungendo un subscriber
+        -- addingPublisher: aggiungendo un publisher
+        -- updatingSubscribers: aggiornando la struttura interna per tenere traccia del nuovo subscriber
+        -- updatingPublishers: aggiornando la struttura interna per tenere traccia del nuovo publisher
+        state : {idle, addingSubscriber, addingPublisher, updatingSubscribers, updatingPublishers};
+
+        -- obiettivo del broker quando ci sono più blockchain che svolgono richieste contemporaneamente
+        target : {0, 1, 2, 3, 4, nil};
+        
+        -- generatore di numeri per scegliere la blockchain da processare nel caso in cui ci sono più blockchain da gestire contemporaneamente
+        scheduler : 0..4;
+
+        -- array di booleani per tenere traccia dell'iscrizione di ogni blockchain
+        subscribers : array 0..4 of boolean;
+        publishers : array 0..4 of boolean;
+        
+
+    ASSIGN
+        -- inizialmente il broker non sta lavorando
+        init(state) := idle;
+        -- inizialmente non c'è nessun obiettivo
+        init(target) := nil;
+
+        -- non ci sono subscriber iscritti inizialmente
+        init(subscribers[0]) := FALSE;
+        init(subscribers[1]) := FALSE;
+        init(subscribers[2]) := FALSE;
+        init(subscribers[3]) := FALSE;
+        init(subscribers[4]) := FALSE;
+        -- non ci sono publisher iscritti inzialmente
+        init(publishers[0]) := FALSE;
+        init(publishers[1]) := FALSE;
+        init(publishers[2]) := FALSE;
+        init(publishers[3]) := FALSE;
+        init(publishers[4]) := FALSE;
+
+        -- assegna un valore casuale allo scheduler
+        init(scheduler) := {0..4};
+        
+        next(scheduler) :=
+            case
+                -- quando il broker si trova in stato di scegliere una blockchain da aggiungere come subscriber o publisher, prendi un valore casuale
+                (state = addingPublisher) | (state = addingSubscriber) : {0..4};
+                TRUE : scheduler;
+            esac;
+
+
+        next(state) :=
+            case
+                -- identificazione delle richieste dalle blockchain:
+                -- se il broker non sta lavorando e almeno due blockchain sta richiedendo di iscriversi come publisher o subscriber:
+                -- scegli se aggiungere un publisher o subscriber in modo casuale
+                (state = idle) & (((b0.state = contractSubscribe) | (b1.state = contractSubscribe) | (b2.state = contractSubscribe) | (b3.state = contractSubscribe) | (b4.state = contractSubscribe)) & ((b0.state = contractPublish) | (b1.state = contractPublish) | (b2.state = contractPublish) | (b3.state = contractPublish) | (b4.state = contractPublish))) : {addingPublisher, addingSubscriber};
+                
+                -- se il broker non sta lavorando e almeno una blockchain sta richiedendo di iscriversi come subscriber:
+                -- passa all'aggiunta di un subscriber
+                (state = idle) & ((b0.state = contractSubscribe) | (b1.state = contractSubscribe) | (b2.state = contractSubscribe) | (b3.state = contractSubscribe) | (b4.state = contractSubscribe)) : addingSubscriber;
+                
+                -- se il broker non sta lavorando e almeno una blockchain sta richiedendo di iscriversi come publisher:
+                -- passa all'aggiunta di un publisher
+                (state = idle) & ((b0.state = contractPublish) | (b1.state = contractPublish) | (b2.state = contractPublish) | (b3.state = contractPublish) | (b4.state = contractPublish)) : addingPublisher;
+
+
+                -- identificazione di un obiettivo valido:
+                -- se il broker sta tentando di aggiungere un subscriber e viene identificato un obiettivo valido:
+                -- aggiorna la struttura interna
+                (state = addingSubscriber) & (target != nil) : updatingSubscribers;
+                -- se il broker sta tentando di aggiungere un subscriber e viene identificato un obiettivo valido:
+                -- aggiorna la struttura interna
+                (state = addingPublisher) & (target != nil) : updatingPublishers;
+
+
+                -- verifica della corretta iscrizione della blockchain selezionata:
+                -- per ogni blockchain, se il broker sta aggiornando le strutture interne per subscriber e la struttura è correttamente
+                -- aggiornata: il broker torna allo stato in cui non lavora
+                (state = updatingSubscribers) & (target = 0) & (subscribers[0] = TRUE) : idle;
+                (state = updatingSubscribers) & (target = 1) & (subscribers[1] = TRUE) : idle;
+                (state = updatingSubscribers) & (target = 2) & (subscribers[2] = TRUE) : idle;
+                (state = updatingSubscribers) & (target = 3) & (subscribers[3] = TRUE) : idle;
+                (state = updatingSubscribers) & (target = 4) & (subscribers[4] = TRUE) : idle;
+
+                -- per ogni blockchain, se il broker sta aggiornando le strutture interne per subscriber e la struttura è correttamente
+                -- aggiornata: il broker torna allo stato in cui non lavora
+                (state = updatingPublishers) & (target = 0) & (publishers[0] = TRUE) : idle;
+                (state = updatingPublishers) & (target = 1) & (publishers[1] = TRUE) : idle;
+                (state = updatingPublishers) & (target = 2) & (publishers[2] = TRUE) : idle;
+                (state = updatingPublishers) & (target = 3) & (publishers[3] = TRUE) : idle;
+                (state = updatingPublishers) & (target = 4) & (publishers[4] = TRUE) : idle;
+
+                TRUE : state;
+            esac;
+
+
+        next(target) :=
+            case
+                -- se il broker sta cercando un subscriber da aggiungere, non è ancora stato trovato un obiettivo valido,
+                -- lo scheduler indica n e bn sta cercando di iscriversi come subscriber (valido):
+                -- target si aggiorna all'id della blockchain valida individuata
+                (state = addingSubscriber) & (target = nil) & (scheduler = 0) & (b0.state = contractSubscribe) : b0.id;
+                (state = addingSubscriber) & (target = nil) & (scheduler = 1) & (b1.state = contractSubscribe) : b1.id;
+                (state = addingSubscriber) & (target = nil) & (scheduler = 2) & (b2.state = contractSubscribe) : b2.id;
+                (state = addingSubscriber) & (target = nil) & (scheduler = 3) & (b3.state = contractSubscribe) : b3.id;
+                (state = addingSubscriber) & (target = nil) & (scheduler = 4) & (b4.state = contractSubscribe) : b4.id;
+
+                -- se il broker sta cercando un publisher da aggiungere, non è ancora stato trovato un obiettivo valido,
+                -- lo scheduler indica n e bn sta cercando di iscriversi come publisher (valido):
+                -- target si aggiorna all'id della blockchain valida individuata
+                (state = addingPublisher) & (target = nil) & (scheduler = 0) & (b0.state = contractPublish) : b0.id;
+                (state = addingPublisher) & (target = nil) & (scheduler = 1) & (b1.state = contractPublish) : b1.id;
+                (state = addingPublisher) & (target = nil) & (scheduler = 2) & (b2.state = contractPublish) : b2.id;
+                (state = addingPublisher) & (target = nil) & (scheduler = 3) & (b3.state = contractPublish) : b3.id;
+                (state = addingPublisher) & (target = nil) & (scheduler = 4) & (b4.state = contractPublish) : b4.id;
+
+                -- se il broker non sta lavorando: il target non punta a nessuna blockchain
+                (state = idle) : nil;
+
+                TRUE : target;
+            esac;
+
+        next(subscribers[0]) :=
+            case
+                -- se il broker sta cercando un subscriber da aggiungere e trova un obiettivo valido in 0: segna la cella 0 come TRUE
+                (state = addingSubscriber) & (target = 0) : TRUE;
+                TRUE : subscribers[0];
+            esac;
+
+        next(subscribers[1]) :=
+            case
+                -- se il broker sta cercando un subscriber da aggiungere e trova un obiettivo valido in 1: segna la cella 1 come TRUE
+                (state = addingSubscriber) & (target = 1) : TRUE;
+                TRUE : subscribers[1];
+            esac;
+
+        next(subscribers[2]) :=
+            case
+                -- se il broker sta cercando un subscriber da aggiungere e trova un obiettivo valido in 2: segna la cella 2 come TRUE
+                (state = addingSubscriber) & (target = 2) : TRUE;
+                TRUE : subscribers[2];
+            esac;
+
+        next(subscribers[3]) :=
+            case
+                -- se il broker sta cercando un subscriber da aggiungere e trova un obiettivo valido in 3: segna la cella 3 come TRUE
+                (state = addingSubscriber) & (target = 3) : TRUE;
+                TRUE : subscribers[3];
+            esac;
+
+        next(subscribers[4]) :=
+            case
+                -- se il broker sta cercando un subscriber da aggiungere e trova un obiettivo valido in 4: segna la cella 4 come TRUE
+                (state = addingSubscriber) & (target = 4) : TRUE;
+                TRUE : subscribers[4];
+            esac;
+
+
+        next(publishers[0]) :=
+            case
+                -- se il broker sta cercando un publisher da aggiungere e trova un obiettivo valido in 0: segna la cella 0 come TRUE
+                (state = addingPublisher) & (target = 0) : TRUE;
+                TRUE : publishers[0];
+            esac;
+
+        next(publishers[1]) :=
+            case
+                -- se il broker sta cercando un publisher da aggiungere e trova un obiettivo valido in 1: segna la cella 1 come TRUE
+                (state = addingPublisher) & (target = 1) : TRUE;
+                TRUE : publishers[1];
+            esac;
+
+        next(publishers[2]) :=
+            case
+                -- se il broker sta cercando un publisher da aggiungere e trova un obiettivo valido in 2: segna la cella 2 come TRUE
+                (state = addingPublisher) & (target = 2) : TRUE;
+                TRUE : publishers[2];
+            esac;
+
+        next(publishers[3]) :=
+            case
+                -- se il broker sta cercando un publisher da aggiungere e trova un obiettivo valido in 3: segna la cella 3 come TRUE
+                (state = addingPublisher) & (target = 3) : TRUE;
+                TRUE : publishers[3];
+            esac;
+
+        next(publishers[4]) :=
+            case
+                -- se il broker sta cercando un publisher da aggiungere e trova un obiettivo valido in 4: segna la cella 4 come TRUE
+                (state = addingPublisher) & (target = 4) : TRUE;
+                TRUE : publishers[4];
+            esac;
+
+
+
+-- modulo per simulare il connettore della blockchain
+-- paremetri: connettore del broker e id della blockchain nella rete
+MODULE blockchainConnector(brokerConnector, id)
+
+    VAR
+        -- i possibili stati rappresentano, in ordine:
+        -- - il connettore non sta lavorando
+        -- - il connettore cerca di iscriversi come subscriber
+        -- - il connettore cerca di iscriversi come publisher
+        state : {idle, contractSubscribe, contractPublish};
+        -- variabili booleane per tener traccia dello stato del contratto della blockchain
+        isPublisher  : boolean;
+        isSubscriber : boolean;
+
+    ASSIGN
+        -- inizialmente il connettore non lavora
+        init(state) := idle;
+        -- inizialmente la blockchain non è iscritta al broker
+        init(isPublisher) := FALSE;
+        init(isSubscriber) := FALSE;
+
+        next(state) :=
+            case
+                -- se il connettore non sta lavorando e non è iscritto al broker: scegli se non fare niente, diventa subscriber o diventa publisher
+                (state = idle) & (isPublisher = FALSE) & (isSubscriber = FALSE) : {idle, contractSubscribe, contractPublish};
+                -- se il connettore non sta lavorando ed è subscriber ma non publisher: scegli se non fare niente o diventare publisher
+                (state = idle) & (isPublisher = FALSE) & (isSubscriber = TRUE)  : {idle, contractPublish};
+                -- se il connettore non sta lavorando ed è publisher ma non subscriber: scegli se non fare niente o diventare subscriber
+                (state = idle) & (isPublisher = FALSE) & (isSubscriber = TRUE)  : {idle, contractSubscribe};
+                
+                -- se il connettore si sta iscrivendo come subscriber e l'iscrizione viene registrata: torna a non fare niente
+                (state = contractSubscribe) & (brokerConnector.subscribers[id] = TRUE) : idle;
+                -- se il connettore si sta iscrivendo come publisher e l'iscrizione viene registrata: torna a non fare niente
+                (state = contractPublish) & (brokerConnector.publishers[id] = TRUE) : idle;
+                
+                TRUE : state;
+            esac;
+
+        next(isPublisher) :=
+            case
+                -- se il broker ha scelto di aggiungere la blockchain come publisher: la blockchain sa di essere publisher
+                (state = contractSubscribe) & (brokerConnector.subscribers[id] = TRUE) : TRUE;
+                TRUE : isPublisher;
+            esac;
+
+        next(isSubscriber) :=
+            case
+                -- se il broker ha scelto di aggiungere la blockchain come subscriber: la blockchain sa di essere subscriber
+                (state = contractPublish) & (brokerConnector.publishers[id] = TRUE) : TRUE;
+                TRUE : isSubscriber;
+            esac;
