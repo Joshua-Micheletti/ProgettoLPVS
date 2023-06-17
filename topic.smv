@@ -1,0 +1,332 @@
+--          PUBLISHER                         BROKER                         SUBSCRIBER
+-- + ------------------------- +      + ------------------ +      + ------------------------- +
+-- |   + ============ +        |      |   + ---------- +   |      |         + ------------ +  |
+-- |  || application ||        |      |   |  connector |   |      |         |  application |  |
+-- |  + ============ +         |      |   + ---------- +   |      |         + ------------ +  |
+-- |        |                  |      |         |          |      |                           |
+-- |        |   + ========== + |      |    + ========== +  |      |   + ---------- +          |
+-- |        +->|| connector ||-|------|-> ||   topic   ||  |      |   |  connector |          |
+-- |           + ========== +  |      |   + ========== +   |      |   + ---------- +          |
+-- + ------------------------- +      + ------------------ +      + ------------------------- +
+-- *componenti di interesse indicate da doppie linee*
+--
+-- Architettura pub-sub per intercomunicazione tra blockchain tramite middleman (broker)
+--
+-- l'area di interesse di questa simulazione comprende la funzionalità di creazione di topic e il loro aggiornamento in seguito
+-- alla presenza di nuove informazioni provenienti dall'applicazione
+--
+-- moduli dell'architettura di interesse: blockchain publisher (applicazione e connettore) e topic nel broker:
+--
+-- - l'applicazione della blockchain lavora costantemente e aggiorna la sua informazione interna periodicamente
+--
+-- - il connettore della blockchain crea un topic e lo aggiorna ogni volta che cambiano le informazioni dall'applicazione
+--
+--
+-- - i topic del broker sono strutture che contengono informazioni provenienti dal publisher (nome, messaggio, id publisher)
+--   e informazioni provenienti dai subscribers (non implementati in questa simulazione)
+
+
+-- modulo main
+MODULE main
+    -- simulazione impostata con 1 broker e 5 blockchain
+    VAR
+        -- modulo per simulare il broker, contiene un riferimento ad ogni blockchain della rete
+        broker : broker(b0, b1, b2, b3, b4);
+
+        -- blockchain appartenenti alla rete, contengono un id e un riferimento al broker
+        b0 : blockchain(0, broker);
+        b1 : blockchain(1, broker);
+        b2 : blockchain(2, broker);
+        b3 : blockchain(3, broker);
+        b4 : blockchain(4, broker);
+
+
+    CTLSPEC -- deadlock topic
+        EF(!AG(broker.t0.state = creating) & !AG(broker.t0.state = updating) & !AG(broker.t0.state = accept) & !AG(broker.t0.state = decline));
+
+    CTLSPEC --deadlock application
+        EF(!AG(b0.app.state = idle) & !AG(b0.app.state = updating));
+
+    CTLSPEC --deadlock connector
+        EF(!AG(b0.connector.state = idle) & !AG(b0.connector.state = checkIfCanPublish) & !AG(b0.connector.state = publish) & !AG(b0.connector.state = updating) & !AG(b0.connector.state = updated));
+
+    CTLSPEC -- verifica che i publishers non pubblichino topic senza permesso
+        AG(!EF(b0.connector.state = publish & broker.t0.state = decline));
+    
+    CTLSPEC -- verifica che i publishers non pubblichino topic senza le condizioni necessarie
+        AG(!EF((b0.connector.state = checkIfCanPublish & (broker.pubs[0] = FALSE | broker.t0.name = nil | broker.t0.message = nil | broker.t0.pub = nil)) -> b0.connector.state = publish));
+
+
+-- modulo per simulare il broker
+-- parametri: blockchain nella rete
+MODULE broker(b0, b1, b2, b3, b4)
+
+    VAR
+        -- array per tenere traccia delle blockchain iscritte come publishers
+        pubs : array 0..4 of boolean;
+
+        -- moduli topic, il secondo parametro rappresenta la blockchain publisher che può creare un topic
+        -- i topic sono mappati in modo tale che b0 può scrivere so t0 etc...
+        t0 : topic(0, b0, b1, b2, b3, b4, pubs);
+        t1 : topic(1, b1, b0, b2, b3, b4, pubs);
+        t2 : topic(2, b2, b1, b0, b3, b4, pubs);
+        t3 : topic(3, b3, b1, b2, b0, b4, pubs);
+        t4 : topic(4, b4, b1, b2, b3, b0, pubs);
+
+    ASSIGN
+        -- lo stato degli array subs e pubs sono pre-impostati (mock data)
+        -- sono impostati in modo tale per qui le blockchain sono:
+        -- b0: publisher
+        -- b1: publisher
+        -- b2: non publisher
+        -- b3: publisher
+        -- b4: non publisher
+        init(pubs[0]) := TRUE;
+        init(pubs[1]) := TRUE;
+        init(pubs[2]) := FALSE;
+        init(pubs[3]) := TRUE;
+        init(pubs[4]) := FALSE;
+
+        -- la lista di publishers non varia (in questa simulazione)
+        next(pubs[0]) := pubs[0];
+        next(pubs[1]) := pubs[1];
+        next(pubs[2]) := pubs[2];
+        next(pubs[3]) := pubs[3];
+        next(pubs[4]) := pubs[4];
+
+
+-- modulo per simulare i topic
+-- parametri: id, publisher, restanti blockchain e lista di publishers
+MODULE topic(id, p, b1, b2, b3, b4, pubs)
+
+    VAR
+        -- stato per rappresentare la condizione del topic e ciò che sta svolgendo in ogni momento
+        -- idle: non sta lavorando
+        -- creating: creazione di un nuovo topic
+        -- updating: aggiornamento delle informazioni del topic
+        state : {idle, accept, decline, creating, updating};
+        
+        -- informazione del topic, rappresenta il nome del topic (rappresentato con un valore da 0 a 4, corrispondente all'id del publisher)
+        name : {0, 1, 2, 3, 4, nil};
+
+        -- informazione del topic, rappresenta il messaggio del topic (informazione proveniente dall'applicazione del publisher)
+        message : {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, nil};
+
+        -- informazione del topic, rappresenta il publisher che ha creato il topic (id del publisher)
+        pub : {0, 1, 2, 3, 4, nil};
+
+    ASSIGN
+        -- stato inziale: non sta lavorando
+        init(state) := idle;
+
+        -- le informazioni iniziali del topic vengono inizializzate a nil (il topic non è ancora stato creato)
+        init(name) := nil;
+        init(message) := nil;
+        init(pub) := nil;
+
+
+        next(state) :=
+            case
+                -- se il topic non sta lavorando, il publisher sta controllando se può pubblicare un nuovo topic e il topic già esiste
+                -- o il publisher non è registrato come tale nel broker:
+                -- declina la richiesta
+                (state = idle) & (p.connector.state = checkIfCanPublish) & ((name != nil) | (pub != nil) | (message != nil) | (pubs[p.id] = FALSE)) : decline;
+                -- se si sta declinando la richiesta del publisher e il publisher riconosce la risposta negativa:
+                -- torna a non lavorare
+                (state = decline) & (p.connector.state = idle) : idle; 
+
+                -- se il topic non sta lavorando, il publisher sta controllando se può pubblicare un nuovo topic, il topic non esiste
+                -- ancora e il publisher è registrato correttamente come tale nel broker:
+                -- accetta la richiesta del publisher
+                (state = idle) & (p.connector.state = checkIfCanPublish) & (name = nil) & (pub = nil) & (message = nil) & (pubs[p.id] = TRUE) : accept;                
+                -- se la richiesta del publisher di creare un nuovo topic è stata accettata e il publisher sta pubblicando:
+                -- entra in fase di creazione del topic
+                (state = accept) & (p.connector.state = publish) : creating;
+                
+                -- se il topic sta venendo creato e le informazioni sono state aggiornate:
+                -- termina il processo di creazione e torna a non lavorare
+                (state = creating) & (name != nil) & (pub != nil) & (message != nil) : idle;
+
+                -- se il topic non sta lavorando e il connettore del publisher vuole aggiornare il topic:
+                -- aggiorna il topic
+                (state = idle) & (p.connector.state = updating) : updating;
+
+                -- se il topic si sta aggiornando: torna a non lavorare (richiede solo un ciclo)
+                (state = updating) : idle;
+
+                TRUE : state;
+            esac;
+
+
+        next(name) :=
+            case
+                -- se il topic sta venendo creato:
+                -- prendi come nome del topic l'id del publisher
+                (state = creating) : p.id;
+                TRUE : name;
+            esac;
+
+        next(message) :=
+            case
+                -- se il topic sta venendo creato o aggiornato:
+                -- prendi come messaggio l'informazione dell'applicazione del publisher
+                (state = creating) | (state = updating) : p.app.info;
+                TRUE : message;
+            esac;
+
+        next(pub) :=
+            case
+                -- se il topic sta venendo creato:
+                -- prendi come informazione sul publisher l'id del publisher
+                (state = creating) : p.id;
+                TRUE : pub;
+            esac;
+        
+
+-- modulo per simulare le blockchain
+-- parametri: id e riferimento al broker
+MODULE blockchain(id, broker)
+
+    VAR
+        -- applicazione interna alla blockchain
+        app : application;
+        -- connettore della blockchain, prende come parametri l'id della blockchain, il broker e l'applicazione interna
+        connector : connector(id, broker, app);
+        
+
+-- modulo per simulare l'applicazione
+MODULE application
+
+    VAR
+        -- stato per rappresentare la condizione dell'applicazione
+        -- idle: non sta lavorando
+        -- uppdating: l'applicazione sta aggiornando la sua informazione interna
+        state : {idle, updating};
+
+        -- l'informazione interna dell'applicazione viene rappresentata con un numero intero da 0 a 9
+        info : 0..9;
+
+    ASSIGN
+        -- inizialmente l'applicazione non lavora
+        init(state) := idle;
+
+        -- l'informazione iniziale è determinata casualmente
+        init(info) := {0..9};
+
+
+        next(state) :=
+            case
+                -- se l'applicazione non sta lavorando:
+                -- scegli casualmente se aggiornare l'informazione interna o se non fare niente
+                -- questo simula l'esecuzione di un applicazione che calcola nuovi risultati da salvare
+                (state = idle) : {idle, updating};
+                
+                -- se l'applicazione sta aggiornando la sua informazione interna:
+                -- torna a non fare niente (esegue in un ciclo)
+                (state = updating) : idle;
+
+                TRUE : state;
+            esac;
+
+        next(info) :=
+            case
+                -- se l'applicazione sta aggiornando:
+                -- assegna un valore casuale all'informazione interna (simulazione risultati di un applicazione)
+                (state = updating) : {0..9};
+
+                TRUE : info;
+            esac;
+
+
+-- modulo per simulare il connettore delle blockchain, responsabile di creare e aggiornare topic
+-- parametri: id, riferimento al broker e riferimento all'applicazione interna della blockchain
+MODULE connector(id, broker, app)
+
+    VAR
+        -- stato per rappresentare la condizione del connettore
+        -- idle: non sta lavorando
+        -- checkIfPublisher: controlla se la blockchain è iscritta come publisher
+        -- checkIfCanPublish: controlla se può creare un topic (se non ne possiede già uno)
+        -- publish: pubblica il topic con le informazioni interne della blockchain
+        -- updating: aggiorna le informazioni del topic in seguito ad un cambio di informazioni interne
+        -- updated: comunica che le informazioni sono state aggiornate nel topic
+        state : {idle, checkIfCanPublish, publish, updating, updated};
+
+        -- variabile per tenere traccia della possessione di un topic
+        published : boolean;
+
+    ASSIGN
+        -- stato iniziale: non sta lavorando
+        init(state) := idle;
+        -- inizialmente il publisher non ha pubblicato nessun topic
+        init(published) := FALSE;
+
+
+        next(state) :=
+            case
+                -- PUBBLICAZIONE:
+                -- se il connettore non sta lavorando e non ha mai pubblicato niente:
+                -- decidi in modo casuale se controllare di essere iscritto come publisher o non fare niente
+                (state = idle) & (published = FALSE) : {idle, checkIfCanPublish};
+
+                -- se il connettore sta controllando se può pubblicare un topic e il topic corrispondente rifiuta la richiesta:
+                -- torna a non lavorare
+                (state = checkIfCanPublish) & (broker.t0.id = id) & (broker.t0.state = decline) : idle;
+                (state = checkIfCanPublish) & (broker.t1.id = id) & (broker.t1.state = decline) : idle;
+                (state = checkIfCanPublish) & (broker.t2.id = id) & (broker.t2.state = decline) : idle;
+                (state = checkIfCanPublish) & (broker.t3.id = id) & (broker.t3.state = decline) : idle;
+                (state = checkIfCanPublish) & (broker.t4.id = id) & (broker.t4.state = decline) : idle;
+
+                -- se il connettore sta controllando se può pubblicare un topic e il topic corrispondente accetta la richiesta:
+                -- entra in fase di pubblicazione del topic
+                (state = checkIfCanPublish) & (broker.t0.id = id) & (broker.t0.state = accept) : publish;
+                (state = checkIfCanPublish) & (broker.t1.id = id) & (broker.t1.state = accept) : publish;
+                (state = checkIfCanPublish) & (broker.t2.id = id) & (broker.t2.state = accept) : publish;
+                (state = checkIfCanPublish) & (broker.t3.id = id) & (broker.t3.state = accept) : publish;
+                (state = checkIfCanPublish) & (broker.t4.id = id) & (broker.t4.state = accept) : publish;
+
+                -- se il connettore sta pubblicando un nuovo topic e il topic è stato correttamente creato:
+                -- torna a non lavorare
+                -- (la correttezza del topic viene controllata attraverso la correttezza delle informazioni id e publisher)
+                -- (questo controllo viene fatto per ogni id)
+                (state = publish) & (broker.t0.id = id) & (broker.t0.pub = id) : idle;
+                (state = publish) & (broker.t1.id = id) & (broker.t1.pub = id) : idle;
+                (state = publish) & (broker.t2.id = id) & (broker.t2.pub = id) : idle;
+                (state = publish) & (broker.t3.id = id) & (broker.t3.pub = id) : idle;
+                (state = publish) & (broker.t4.id = id) & (broker.t4.pub = id) : idle;
+                
+
+                -- AGGIORNAMENTO:
+                -- se il connettore non sta lavorando, ha già pubblicato un topic e l'applicazione si sta aggiornando:
+                -- aggiorna le informazioni del topic
+                (state = idle) & (published = TRUE) & (app.state = updating) : updating;
+
+                -- se il connettore sta aggiornando il topic e il messaggio nel topic corrisponde all'informazione dell'applicazione aggiornata:
+                -- indica che il topic è stato aggiornato correttamente
+                -- (questo controllo viene fatto per ogni id)
+                (state = updating) & (broker.t0.id = id) & (broker.t0.message = app.info) : updated;
+                (state = updating) & (broker.t1.id = id) & (broker.t1.message = app.info) : updated;
+                (state = updating) & (broker.t2.id = id) & (broker.t2.message = app.info) : updated;
+                (state = updating) & (broker.t3.id = id) & (broker.t3.message = app.info) : updated;
+                (state = updating) & (broker.t4.id = id) & (broker.t4.message = app.info) : updated;
+
+                -- se il topic è stato aggiornato:
+                -- torna a non lavorare
+                -- (questo controllo viene fatto per ogni id)
+                (state = updated) & (broker.t0.id = id) & (broker.t0.state = updating) : idle;
+                (state = updated) & (broker.t1.id = id) & (broker.t1.state = updating) : idle;
+                (state = updated) & (broker.t2.id = id) & (broker.t2.state = updating) : idle;
+                (state = updated) & (broker.t3.id = id) & (broker.t3.state = updating) : idle;
+                (state = updated) & (broker.t4.id = id) & (broker.t4.state = updating) : idle;
+
+                TRUE : state;
+            esac;
+
+
+        next(published) :=
+            case
+                -- se il connettore è arrivato allo stato di pubblicazione di un nuovo topic:
+                -- il connettore tiene traccia della presenza di un topic pubblicato
+                (state = publish) : TRUE;
+                TRUE : published;
+            esac;

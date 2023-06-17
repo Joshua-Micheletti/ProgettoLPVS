@@ -38,11 +38,11 @@ MODULE main
     -- proprietà di interesse della simulazione:
     CTLSPEC -- deadlock broker
         -- non può mai, nel futuro, esistere una condizione in cui il connettore del broker rimane sempre su uno stato all'infuori di "idle"
-        AF(!EG(brokerConnector.state = addingSubscriber | brokerConnector.state = addingPublisher | brokerConnector.state = updatingSubscribers | brokerConnector.state = updatingPublishers));
+        EF(!AG(brokerConnector.state = addingSubscriber | brokerConnector.state = addingPublisher | brokerConnector.state = updatingSubscribers | brokerConnector.state = updatingPublishers));
 
     CTLSPEC -- deadlock blockchain
         -- non può mai, nel futuro, esistere una condizione in cui la blockchain rimane sempre su uno stato all'infuori di "idle"
-        AF(!EG(b0.state = contractSubscribe | b0.state = contractPublish));
+        EF(!AG(b0.state = contractSubscribe | b0.state = contractPublish));
 
     CTLSPEC -- liveness subscribe
         -- sempre accade che lo stato della blockchain "contractSubscribe" implica che eventualmente il broker registra la blockchain come subscriber
