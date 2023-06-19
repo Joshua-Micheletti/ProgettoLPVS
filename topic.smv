@@ -50,12 +50,21 @@ MODULE main
     CTLSPEC --deadlock connector
         EF(!AG(b0.connector.state = idle) & !AG(b0.connector.state = checkIfCanPublish) & !AG(b0.connector.state = publish) & !AG(b0.connector.state = updating) & !AG(b0.connector.state = updated));
 
-    CTLSPEC -- verifica che i publishers non pubblichino topic senza permesso
+    CTLSPEC -- verifica che i publishers non pubblichino topic senza permesso (controllo da parte dei topic)
         AG(!EF(b0.connector.state = publish & broker.t0.state = decline));
     
-    CTLSPEC -- verifica che i publishers non pubblichino topic senza le condizioni necessarie
-        AG(!EF((b0.connector.state = checkIfCanPublish & (broker.pubs[0] = FALSE | broker.t0.name = nil | broker.t0.message = nil | broker.t0.pub = nil)) -> b0.connector.state = publish));
+    CTLSPEC -- verifica che i publishers non pubblichino topic senza le condizioni necessarie (controllo totale)
+        AG((b0.connector.state = checkIfCanPublish & (broker.pubs[0] = FALSE | broker.t0.name != nil | broker.t0.message != nil | broker.t0.pub != nil)) -> !EF(b0.connector.state = publish));
 
+    CTLSPEC -- verifica che i publishers non pubblichino topic senza le condizioni necessarie (controllo totale)
+        AG((b2.connector.state = checkIfCanPublish & (broker.pubs[2] = FALSE | broker.t2.name != nil | broker.t2.message != nil | broker.t2.pub != nil)) -> !EF(b2.connector.state = publish));
+
+    CTLSPEC -- verifica che un publisher con il permesso di pubblicare effettivamente pubblica
+        AG((b0.connector.state = checkIfCanPublish & (broker.pubs[0] = TRUE & broker.t0.name = nil & broker.t0.message = nil & broker.t0.pub = nil)) -> AF(b0.connector.state = publish));
+
+    CTLSPEC -- varifica che un aggiornamento di un applicazione di un publisher che ha pubblicato un topic aggiorna l'informazione nel topic
+        AG((b0.app.state = updating & b0.connector.published = TRUE & broker.t0.state = idle) -> AF(broker.t0.state = updating));
+        
 
 -- modulo per simulare il broker
 -- parametri: blockchain nella rete

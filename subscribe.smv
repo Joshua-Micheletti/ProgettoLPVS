@@ -1,0 +1,246 @@
+--          PUBLISHER                         BROKER                         SUBSCRIBER
+-- + ------------------------- +      + ------------------ +      + ------------------------- +
+-- |  + ----------- +          |      |   + ---------- +   |      |          + ============= +|
+-- |  | application |          |      |   |  connector |   |      |         ||  application |||
+-- |  + ----------- +          |      |   + ---------- +   |      |         + ============= + |
+-- |                           |      |         |          |      |                     ^     |
+-- |            + ---------- + |      |    + ========== +  |      |    + =========== +  |     |
+-- |            | connector  | |      |   ||   topic   ||<-|------|-->||  connector ||--+     |
+-- |            + ---------- + |      |   + ========== +   |      |   + =========== +         |
+-- + ------------------------- +      + ------------------ +      + ------------------------- +
+-- *componenti di interesse indicate da doppie linee*
+
+
+
+
+MODULE main
+
+    VAR
+        -- modulo per simulare il broker, contiene un riferimento ad ogni blockchain della rete
+        broker : broker(b0, b1, b2, b3, b4);
+
+        -- blockchain appartenenti alla rete, contengono un id e un riferimento al broker
+        b0 : blockchain(0, broker);
+        b1 : blockchain(1, broker);
+        b2 : blockchain(2, broker);
+        b3 : blockchain(3, broker);
+        b4 : blockchain(4, broker);
+
+
+
+MODULE broker(b0, b1, b2, b3, b4)
+
+    VAR
+        -- array per tenere traccia delle blockchain iscritte come publishers
+        subs : array 0..4 of boolean;
+
+        -- moduli topic, il secondo parametro rappresenta la blockchain publisher che può creare un topic
+        -- i topic sono mappati in modo tale che b0 può scrivere so t0 etc...
+        t0 : topic(0, b0, b1, b2, b3, b4, subs, 4);
+        t1 : topic(1, b0, b1, b2, b3, b4, subs, 2);
+        t2 : topic(2, b0, b1, b2, b3, b4, subs, 6);
+        t3 : topic(3, b0, b1, b2, b3, b4, subs, -1);
+        t4 : topic(4, b0, b1, b2, b3, b4, subs, -1);
+
+    ASSIGN
+        -- lo stato degli array subs e pubs sono pre-impostati (mock data)
+        -- sono impostati in modo tale per qui le blockchain sono:
+        -- b0: publisher
+        -- b1: publisher
+        -- b2: non publisher
+        -- b3: publisher
+        -- b4: non publisher
+        init(subs[0]) := TRUE;
+        init(subs[1]) := FALSE;
+        init(subs[2]) := TRUE;
+        init(subs[3]) := FALSE;
+        init(subs[4]) := TRUE;
+
+        -- la lista di publishers non varia (in questa simulazione)
+        next(subs[0]) := subs[0];
+        next(subs[1]) := subs[1];
+        next(subs[2]) := subs[2];
+        next(subs[3]) := subs[3];
+        next(subs[4]) := subs[4];
+
+
+
+-- modulo per simulare i topic
+-- parametri: id, publisher, restanti blockchain e lista di publishers
+MODULE topic(id, b0, b1, b2, b3, b4, subs, m)
+
+    VAR
+        -- stato per rappresentare la condizione del topic e ciò che sta svolgendo in ogni momento
+        -- idle: non sta lavorando
+        -- creating: creazione di un nuovo topic
+        -- updating: aggiornamento delle informazioni del topic
+        state : {idle, accept, decline, updating};
+        
+        -- informazione del topic, rappresenta il nome del topic (rappresentato con un valore da 0 a 4, corrispondente all'id del publisher)
+        name : {0, 1, 2, 3, 4, nil};
+
+        -- informazione del topic, rappresenta il messaggio del topic (informazione proveniente dall'applicazione del publisher)
+        message : {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, nil};
+
+        -- informazione del topic, rappresenta il publisher che ha creato il topic (id del publisher)
+        pub : {0, 1, 2, 3, 4, nil};
+
+        sub : array 0..4 of boolean;
+
+    ASSIGN
+        -- stato inziale: non sta lavorando
+        init(state) := idle;
+
+        -- le informazioni iniziali del topic vengono inizializzate a nil (il topic non è ancora stato creato)
+        init(name) := 
+            case
+                (m != -1) : id;
+                TRUE : nil;
+            esac;
+
+        init(message) :=
+            case
+                (m != -1) : {0..9};
+                TRUE : nil;
+            esac;
+
+        init(pub) :=
+            case
+                (m != -1) : id;
+                TRUE : nil;
+            esac;
+
+        init(sub[0]) := FALSE;
+        init(sub[1]) := FALSE;
+        init(sub[2]) := FALSE;
+        init(sub[3]) := FALSE;
+        init(sub[4]) := FALSE;
+
+
+        next(state) :=
+            case
+                --(state = idle) & (b0.id != id);
+                (state = idle) & (b0.subscribe) & (b0.target = id) & (sub[0] = FALSE) & (id != b0.id) & (subs[0] = TRUE) & (message != nil): accept;
+                
+                TRUE : state;
+            esac;
+
+
+        next(name) := name;
+
+        next(message) :=
+            case
+                (state = updating) : {0..9};
+                TRUE : message;
+            esac;
+
+        next(pub) := pub;
+
+
+
+        next(sub[0]) :=
+            case
+                TRUE : sub[0];
+            esac;
+
+        next(sub[1]) :=
+            case
+                TRUE : sub[1];
+            esac;
+
+        next(sub[2]) :=
+            case
+                TRUE : sub[2];
+            esac;
+
+        next(sub[3]) :=
+            case
+                TRUE : sub[3];
+            esac;
+
+        next(sub[4]) :=
+            case
+                TRUE : sub[4];
+            esac;
+        
+
+
+
+
+
+
+MODULE blockchain(id, broker)
+
+    VAR
+        app : application(connector);
+        connector : connector(id, broker);
+
+
+MODULE application(connector)
+
+    VAR
+        state : {idle, updating};
+        info : 0..9;
+
+    ASSIGN
+        init(state) := idle;
+        init(info) := {0..9};
+
+        next(state) :=
+            case
+                TRUE : state;
+            esac;
+
+        next(info) :=
+            case
+                TRUE : info;
+            esac;
+
+
+
+MODULE connector(id, broker)
+
+    VAR
+        state : {idle, findTopic, requestSubscribe};
+        target : {0, 1, 2, 3, 4, nil};
+        scheduler : 0..4;
+
+    ASSIGN
+        init(state) := idle;
+        init(target) := nil;
+        init(scheduler) := {0..4};
+
+
+        next(state) :=
+            case
+                (state = idle) : {idle, findTopic};
+                (state = checkIfCanSubscribe) & (target != nil) : requestSubscribe;
+
+                (state = requestSubscribe) & (broker.t0.id = target) & (broker.t0.state = decline | broker.t0.state = accept) : idle;
+                (state = requestSubscribe) & (broker.t1.id = target) & (broker.t1.state = decline | broker.t1.state = accept) : idle;
+                (state = requestSubscribe) & (broker.t2.id = target) & (broker.t2.state = decline | broker.t2.state = accept) : idle;
+                (state = requestSubscribe) & (broker.t3.id = target) & (broker.t3.state = decline | broker.t3.state = accept) : idle;
+                (state = requestSubscribe) & (broker.t4.id = target) & (broker.t4.state = decline | broker.t4.state = accept) : idle;
+
+                TRUE : state;
+            esac;
+
+        next(target) :=
+            case
+                (state = findTopic) & (target = nil) : scheduler;
+                (state = findTopic) & (target = nil) : scheduler;
+                (state = findTopic) & (target = nil) : scheduler;
+                (state = findTopic) & (target = nil) : scheduler;
+                (state = findTopic) & (target = nil) : scheduler;
+
+                (state = idle) : nil;
+
+                TRUE : target;
+            esac;
+
+        next(scheduler) :=
+            case
+                (state = findTopic) : {0..4};
+                TRUE : scheduler;
+            esac;
+
