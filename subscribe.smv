@@ -120,8 +120,25 @@ MODULE topic(id, b0, b1, b2, b3, b4, subs, m)
         next(state) :=
             case
                 --(state = idle) & (b0.id != id);
-                (state = idle) & (b0.subscribe) & (b0.target = id) & (sub[0] = FALSE) & (id != b0.id) & (subs[0] = TRUE) & (message != nil): accept;
-                
+                -- (state = idle) & (b0.connector.state = requestSubscribe) & (b0.connector.target = id) & (sub[0] = FALSE) & (id != b0.id) & (subs[0] = TRUE) & (message != nil): accept;
+                -- (state = idle) & (b1.connector.state = requestSubscribe) & (b1.connector.target = id) & (sub[1] = FALSE) & (id != b1.id) & (subs[1] = TRUE) & (message != nil): accept;
+                -- (state = idle) & (b2.connector.state = requestSubscribe) & (b2.connector.target = id) & (sub[2] = FALSE) & (id != b0.id) & (subs[2] = TRUE) & (message != nil): accept;
+                -- (state = idle) & (b3.connector.state = requestSubscribe) & (b3.connector.target = id) & (sub[3] = FALSE) & (id != b0.id) & (subs[3] = TRUE) & (message != nil): accept;
+                -- (state = idle) & (b4.connector.state = requestSubscribe) & (b4.connector.target = id) & (sub[4] = FALSE) & (id != b0.id) & (subs[4] = TRUE) & (message != nil): accept;
+
+                (state = idle) & (b0.connector.state = requestSubscribe) & (b0.connector.target = id) & (sub[0] = FALSE) & (id != b0.id) & (subs[0] = TRUE) & (message != nil) : accept;
+                (state = idle) & (b1.connector.state = requestSubscribe) & (b1.connector.target = id) & (sub[1] = FALSE) & (id != b1.id) & (subs[1] = TRUE) & (message != nil) : accept;
+                (state = idle) & (b2.connector.state = requestSubscribe) & (b2.connector.target = id) & (sub[2] = FALSE) & (id != b2.id) & (subs[2] = TRUE) & (message != nil) : accept;
+                (state = idle) & (b3.connector.state = requestSubscribe) & (b3.connector.target = id) & (sub[3] = FALSE) & (id != b3.id) & (subs[3] = TRUE) & (message != nil) : accept;
+                (state = idle) & (b4.connector.state = requestSubscribe) & (b4.connector.target = id) & (sub[4] = FALSE) & (id != b4.id) & (subs[4] = TRUE) & (message != nil) : accept;
+
+                (state = idle) & (b0.connector.state = requestSubscribe) & (b0.connector.target = id) & ((sub[0] = TRUE) | (id = b0.id) | (subs[0] = FALSE) | (message != nil)) : decline;
+                (state = idle) & (b1.connector.state = requestSubscribe) & (b1.connector.target = id) & ((sub[1] = TRUE) | (id = b1.id) | (subs[1] = FALSE) | (message != nil)) : decline;
+                (state = idle) & (b2.connector.state = requestSubscribe) & (b2.connector.target = id) & ((sub[2] = TRUE) | (id = b2.id) | (subs[2] = FALSE) | (message != nil)) : decline;
+                (state = idle) & (b3.connector.state = requestSubscribe) & (b3.connector.target = id) & ((sub[3] = TRUE) | (id = b3.id) | (subs[3] = FALSE) | (message != nil)) : decline;
+                (state = idle) & (b4.connector.state = requestSubscribe) & (b4.connector.target = id) & ((sub[4] = TRUE) | (id = b4.id) | (subs[4] = FALSE) | (message != nil)) : decline;
+
+
                 TRUE : state;
             esac;
 
@@ -214,7 +231,7 @@ MODULE connector(id, broker)
         next(state) :=
             case
                 (state = idle) : {idle, findTopic};
-                (state = checkIfCanSubscribe) & (target != nil) : requestSubscribe;
+                (state = findTopic) & (target != nil) : requestSubscribe;
 
                 (state = requestSubscribe) & (broker.t0.id = target) & (broker.t0.state = decline | broker.t0.state = accept) : idle;
                 (state = requestSubscribe) & (broker.t1.id = target) & (broker.t1.state = decline | broker.t1.state = accept) : idle;
