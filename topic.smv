@@ -1,3 +1,35 @@
+-- Progetto Linguaggi di Programmazione e Verifica del Software
+-- Studente: Joshua Micheletti
+-- Matricola: 283057
+
+-- SCHEMA ARCHITETTURA
+
+--          PUBLISHER                         BROKER                         SUBSCRIBER
+-- + ------------------------- +      + ------------------- +      + ------------------------- +
+-- |  + ----------- +          |      |    + --------- +    |      |          + ----------- +  |
+-- |  | application |          |   +--|--> | connector | <--|--+   |          | application |  |
+-- |  + ----------- +          |   |  |    + --------- +    |  |   |          + ----------- +  |
+-- |       |                   |   |  |          |          |  |   |                   ^       |
+-- |       |    + --------- +  |   |  |    + --------- +    |  |   |  + --------- +    |       |
+-- |       +--> | connector | -|---+--|--> |   topic   |    |  +---|- | connector | ---+       |
+-- |            + --------- +  |      |    + --------- + <--|------|> + --------- +            |
+-- + ------------------------- +      + ------------------- +      + ------------------------- +
+
+
+-- FUNZIONAMENTO ARCHITETTURA
+
+-- Architettura pub-sub per intercomunicazione tra blockchain tramite middleman (broker).
+-- La struttura consiste nella iscrizione di blockchain ad un broker tramite connettori.
+-- Ogni blockchain si può iscrivere come publisher, subscriber o entrambi.
+-- Le blockchain publisher possono creare un topic nel broker per rendere disponibili le proprie informazioni ad altre blockchain.
+-- I publisher aggiornano periodicamente i topic quando ottengono nuove informazioni pertinenti
+-- I subscriber si possono iscrivere a topic esistenti nel broker per ricevere le informazioni al loro interno.
+-- Ogni volta che un topic viene aggiornato, le nuove informazioni vengono inviate a tutte le blockchain subscriber iscritte a quel topic.
+
+
+
+-- SCHEMA ARCHITETTURA DELLA SIMULAZIONE
+
 --          PUBLISHER                         BROKER                         SUBSCRIBER
 -- + ------------------------- +      + ------------------ +      + ------------------------- +
 -- |   + ============ +        |      |   + ---------- +   |      |         + ------------ +  |
@@ -9,24 +41,58 @@
 -- |           + ========== +  |      |   + ========== +   |      |   + ---------- +          |
 -- + ------------------------- +      + ------------------ +      + ------------------------- +
 -- *componenti di interesse indicate da doppie linee*
---
--- Architettura pub-sub per intercomunicazione tra blockchain tramite middleman (broker)
---
+
+
+-- AREA DI INTERESSE DELLA SIMULAZIONE
+
 -- l'area di interesse di questa simulazione comprende la funzionalità di creazione di topic e il loro aggiornamento in seguito
--- alla presenza di nuove informazioni provenienti dall'applicazione
---
--- moduli dell'architettura di interesse: blockchain publisher (applicazione e connettore) e topic nel broker:
---
--- - l'applicazione della blockchain lavora costantemente e aggiorna la sua informazione interna periodicamente
---
--- - il connettore della blockchain crea un topic e lo aggiorna ogni volta che cambiano le informazioni dall'applicazione
---
---
--- - i topic del broker sono strutture che contengono informazioni provenienti dal publisher (nome, messaggio, id publisher)
---   e informazioni provenienti dai subscribers (non implementati in questa simulazione)
+-- alla presenza di nuove informazioni provenienti dall'applicazione della blockchain publisher.
 
 
--- modulo main
+-- FUNZIONALITA SIMULATE
+
+-- - Aggiornamento delle informazioni interne alla blockchain attraverso l'applicazione
+-- - Creazione di topic da parte delle blockchain publisher
+-- - Aggiornamento di topic da parte delle blockchain publisher
+
+
+-- MODULI PERTINENTI ALLA SIMULAZIONE
+
+-- moduli dell'architettura di interesse sono: blockchain publisher (applicazione e connettore) e topic nel broker:
+
+-- ° Blockchain publisher:
+--   - l'applicazione della blockchain lavora costantemente e aggiorna la sua informazione interna periodicamente,
+--   - il connettore della blockchain crea un topic e lo aggiorna ogni volta che cambiano le informazioni dall'applicazione,
+
+-- ° Topic:
+--   - i topic del broker sono strutture che contengono informazioni provenienti dal publisher (nome, messaggio, id publisher)
+--     e informazioni provenienti dai subscribers (richieste di iscrizioni) (non implementati in questa simulazione)
+
+
+-- APPROSSIMAZIONI E ASTRAZIONI IN USO
+
+-- - l'esecuzione delle applicazioni non viene definito, si semplifica l'applicazione concentrandosi sull'output che varia in maniera aleatoria
+
+-- - l'informazione proveniente dall'applicazione viene rappresentata con un numero intero da 0 a 9
+
+-- - la creazione dei topic da parte delle blockchain publisher viene fatta in maniera casuale, senza un movito dietro alla decisione di
+--   condividere informazioni interne
+
+-- - all'interno del topic, il nome del topic corrisponde all'id del publisher che lo ha creato.
+
+-- - si inizia la simulazione in uno stato in cui alcune blockchain sono già iscritte come publishers e altre no, non avviene il processo
+--   di iscrizione. Si da per scontato che il processo di iscrizione funzioni correttamente
+
+-- - il sistema viene inizializzato con 1 modulo broker e 5 moduli blockchain, di cui 3 sono iscritti come publisher, e 2 non sono iscritti
+
+
+-- ISTRUZIONI DI SIMULAZIONE
+
+-- per eseguire la simulazione in NuSMV tramite il comando "simulate", è necessario aggiungere il parametro "-r", per abilitare
+-- la scelta non deterministica degli stati, necessaria per la corretta rappresentazione del sistema.
+
+
+-- Modulo main
 MODULE main
     -- simulazione impostata con 1 broker e 5 blockchain
     VAR
@@ -41,22 +107,24 @@ MODULE main
         b4 : blockchain(4, broker);
 
 
-    CTLSPEC -- deadlock topic
+    -- Proprietà del sistema da verificare: (gran parte delle proprietà vengono verificate sulla prima blockchain e topic, ma rappresentano il funzionamento di tutti i moduli del sistema)
+
+    CTLSPEC -- verifica che il modulo topic non entri in deadlock (non rimanga bloccato su uno qualsiasi dei suoi stati interni di esecuzione)
         EF(!AG(broker.t0.state = creating) & !AG(broker.t0.state = updating) & !AG(broker.t0.state = accept) & !AG(broker.t0.state = decline));
 
-    CTLSPEC --deadlock application
+    CTLSPEC -- verifica che il modulo applicazione non entri in deadlock (non rimanga bloccato su uno qualsiasi dei suoi stati interni)
         EF(!AG(b0.app.state = idle) & !AG(b0.app.state = updating));
 
-    CTLSPEC --deadlock connector
+    CTLSPEC -- verifica che il modulo connettore non entri in deadlock (non rimanga bloccato su uno quqalsiasi dei suoi stati interni)
         EF(!AG(b0.connector.state = idle) & !AG(b0.connector.state = checkIfCanPublish) & !AG(b0.connector.state = publish) & !AG(b0.connector.state = updating) & !AG(b0.connector.state = updated));
 
     CTLSPEC -- verifica che i publishers non pubblichino topic senza permesso (controllo da parte dei topic)
         AG(!EF(b0.connector.state = publish & broker.t0.state = decline));
     
-    CTLSPEC -- verifica che i publishers non pubblichino topic senza le condizioni necessarie (controllo totale)
+    CTLSPEC -- verifica che i publishers non pubblichino topic senza le condizioni necessarie (controllo totale) (controllo nel caso di un publisher iscritto come tale)
         AG((b0.connector.state = checkIfCanPublish & (broker.pubs[0] = FALSE | broker.t0.name != nil | broker.t0.message != nil | broker.t0.pub != nil)) -> !EF(b0.connector.state = publish));
 
-    CTLSPEC -- verifica che i publishers non pubblichino topic senza le condizioni necessarie (controllo totale)
+    CTLSPEC -- verifica che i publishers non pubblichino topic senza le condizioni necessarie (controllo totale) (controllo nel caso di un publisher non iscritto)
         AG((b2.connector.state = checkIfCanPublish & (broker.pubs[2] = FALSE | broker.t2.name != nil | broker.t2.message != nil | broker.t2.pub != nil)) -> !EF(b2.connector.state = publish));
 
     CTLSPEC -- verifica che un publisher con il permesso di pubblicare effettivamente pubblica
@@ -66,7 +134,7 @@ MODULE main
         AG((b0.app.state = updating & b0.connector.published = TRUE & broker.t0.state = idle) -> AF(broker.t0.state = updating));
         
 
--- modulo per simulare il broker
+-- Modulo per simulare il broker
 -- parametri: blockchain nella rete
 MODULE broker(b0, b1, b2, b3, b4)
 
@@ -74,8 +142,8 @@ MODULE broker(b0, b1, b2, b3, b4)
         -- array per tenere traccia delle blockchain iscritte come publishers
         pubs : array 0..4 of boolean;
 
-        -- moduli topic, il secondo parametro rappresenta la blockchain publisher che può creare un topic
-        -- i topic sono mappati in modo tale che b0 può scrivere so t0 etc...
+        -- Moduli topic, il secondo parametro rappresenta la blockchain publisher che può creare un topic
+        -- i topic sono mappati in modo tale che b0 può scrivere su t0 etc...
         t0 : topic(0, b0, b1, b2, b3, b4, pubs);
         t1 : topic(1, b1, b0, b2, b3, b4, pubs);
         t2 : topic(2, b2, b1, b0, b3, b4, pubs);
@@ -85,16 +153,11 @@ MODULE broker(b0, b1, b2, b3, b4)
     ASSIGN
         -- lo stato degli array subs e pubs sono pre-impostati (mock data)
         -- sono impostati in modo tale per qui le blockchain sono:
-        -- b0: publisher
-        -- b1: publisher
-        -- b2: non publisher
-        -- b3: publisher
-        -- b4: non publisher
-        init(pubs[0]) := TRUE;
-        init(pubs[1]) := TRUE;
-        init(pubs[2]) := FALSE;
-        init(pubs[3]) := TRUE;
-        init(pubs[4]) := FALSE;
+        init(pubs[0]) := TRUE;  -- b0: publisher
+        init(pubs[1]) := TRUE;  -- b1: publisher
+        init(pubs[2]) := FALSE; -- b2: non publisher
+        init(pubs[3]) := TRUE;  -- b3: publisher
+        init(pubs[4]) := FALSE; -- b4: non publisher
 
         -- la lista di publishers non varia (in questa simulazione)
         next(pubs[0]) := pubs[0];
@@ -104,25 +167,30 @@ MODULE broker(b0, b1, b2, b3, b4)
         next(pubs[4]) := pubs[4];
 
 
--- modulo per simulare i topic
+-- Modulo per simulare i topic
 -- parametri: id, publisher, restanti blockchain e lista di publishers
-MODULE topic(id, p, b1, b2, b3, b4, pubs)
+MODULE topic( id, p, b1, b2, b3, b4, pubs)
 
     VAR
         -- stato per rappresentare la condizione del topic e ciò che sta svolgendo in ogni momento
         -- idle: non sta lavorando
+        -- accept: accettazione di una richiesta di creazione di un topic da parte della blockchain publisher p
+        -- decline: rifiuto di una richiesta di creazione di un topic da parte della blockchain publisher p
         -- creating: creazione di un nuovo topic
         -- updating: aggiornamento delle informazioni del topic
         state : {idle, accept, decline, creating, updating};
         
-        -- informazione del topic, rappresenta il nome del topic (rappresentato con un valore da 0 a 4, corrispondente all'id del publisher)
+        -- informazioni del topic (valore nil rappresenta il caso in cui il topic non sia ancora stato creato)
+        -- rappresenta il nome del topic (rappresentato con un valore da 0 a 4, corrispondente all'id del publisher)
         name : {0, 1, 2, 3, 4, nil};
 
-        -- informazione del topic, rappresenta il messaggio del topic (informazione proveniente dall'applicazione del publisher)
+        -- rappresenta il messaggio del topic (informazione proveniente dall'applicazione del publisher)
         message : {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, nil};
 
-        -- informazione del topic, rappresenta il publisher che ha creato il topic (id del publisher)
+        -- rappresenta il publisher che ha creato il topic (id del publisher)
         pub : {0, 1, 2, 3, 4, nil};
+
+        -- normalmente il topic contiene una lista di subscriber iscritti, ma non è pertinente all campo della simulazione
 
     ASSIGN
         -- stato inziale: non sta lavorando
@@ -136,6 +204,8 @@ MODULE topic(id, p, b1, b2, b3, b4, pubs)
 
         next(state) :=
             case
+                -- CREAZIONE:
+
                 -- se il topic non sta lavorando, il publisher sta controllando se può pubblicare un nuovo topic e il topic già esiste
                 -- o il publisher non è registrato come tale nel broker:
                 -- declina la richiesta
@@ -156,6 +226,9 @@ MODULE topic(id, p, b1, b2, b3, b4, pubs)
                 -- termina il processo di creazione e torna a non lavorare
                 (state = creating) & (name != nil) & (pub != nil) & (message != nil) : idle;
 
+
+                -- AGGIORNAMENTO:
+
                 -- se il topic non sta lavorando e il connettore del publisher vuole aggiornare il topic:
                 -- aggiorna il topic
                 (state = idle) & (p.connector.state = updating) : updating;
@@ -163,6 +236,8 @@ MODULE topic(id, p, b1, b2, b3, b4, pubs)
                 -- se il topic si sta aggiornando: torna a non lavorare (richiede solo un ciclo)
                 (state = updating) : idle;
 
+
+                -- mantieni lo stato in ogni altro caso
                 TRUE : state;
             esac;
 
@@ -172,6 +247,8 @@ MODULE topic(id, p, b1, b2, b3, b4, pubs)
                 -- se il topic sta venendo creato:
                 -- prendi come nome del topic l'id del publisher
                 (state = creating) : p.id;
+
+                -- mantieni lo stato in ogni altro caso
                 TRUE : name;
             esac;
 
@@ -180,6 +257,8 @@ MODULE topic(id, p, b1, b2, b3, b4, pubs)
                 -- se il topic sta venendo creato o aggiornato:
                 -- prendi come messaggio l'informazione dell'applicazione del publisher
                 (state = creating) | (state = updating) : p.app.info;
+
+                -- mantieni lo stato in ogni altro caso
                 TRUE : message;
             esac;
 
@@ -188,12 +267,14 @@ MODULE topic(id, p, b1, b2, b3, b4, pubs)
                 -- se il topic sta venendo creato:
                 -- prendi come informazione sul publisher l'id del publisher
                 (state = creating) : p.id;
+
+                -- mantieni lo stato in ogni altro caso
                 TRUE : pub;
             esac;
         
 
--- modulo per simulare le blockchain
--- parametri: id e riferimento al broker
+-- Modulo per simulare le blockchain
+-- parametri:     id e riferimento al broker
 MODULE blockchain(id, broker)
 
     VAR
@@ -203,7 +284,7 @@ MODULE blockchain(id, broker)
         connector : connector(id, broker, app);
         
 
--- modulo per simulare l'applicazione
+-- Modulo per simulare l'applicazione
 MODULE application
 
     VAR
@@ -234,27 +315,28 @@ MODULE application
                 -- torna a non fare niente (esegue in un ciclo)
                 (state = updating) : idle;
 
+                -- mantieni lo stato in ogni altro caso
                 TRUE : state;
             esac;
 
         next(info) :=
             case
                 -- se l'applicazione sta aggiornando:
-                -- assegna un valore casuale all'informazione interna (simulazione risultati di un applicazione)
+                -- assegna un valore casuale all'informazione interna (simulazione risultati di un esecuzione)
                 (state = updating) : {0..9};
 
+                -- mantieni lo stato in ogni altro caso
                 TRUE : info;
             esac;
 
 
--- modulo per simulare il connettore delle blockchain, responsabile di creare e aggiornare topic
+-- Modulo per simulare il connettore delle blockchain, responsabile di creare e aggiornare topic
 -- parametri: id, riferimento al broker e riferimento all'applicazione interna della blockchain
 MODULE connector(id, broker, app)
 
     VAR
         -- stato per rappresentare la condizione del connettore
         -- idle: non sta lavorando
-        -- checkIfPublisher: controlla se la blockchain è iscritta come publisher
         -- checkIfCanPublish: controlla se può creare un topic (se non ne possiede già uno)
         -- publish: pubblica il topic con le informazioni interne della blockchain
         -- updating: aggiorna le informazioni del topic in seguito ad un cambio di informazioni interne
@@ -328,6 +410,8 @@ MODULE connector(id, broker, app)
                 (state = updated) & (broker.t3.id = id) & (broker.t3.state = updating) : idle;
                 (state = updated) & (broker.t4.id = id) & (broker.t4.state = updating) : idle;
 
+
+                -- mantieni lo stato in ogni altro caso
                 TRUE : state;
             esac;
 
@@ -337,5 +421,7 @@ MODULE connector(id, broker, app)
                 -- se il connettore è arrivato allo stato di pubblicazione di un nuovo topic:
                 -- il connettore tiene traccia della presenza di un topic pubblicato
                 (state = publish) : TRUE;
+
+                -- mantieni lo stato in ogni altro caso
                 TRUE : published;
             esac;
